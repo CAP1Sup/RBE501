@@ -209,6 +209,7 @@ for ii = 1:nTests
         fprintf('Target joint variables: %s\n', mat2str(q(:, ii)));
         fprintf('Target pose: %s\n', mat2str(targetPose));
         fprintf('Jacobian: %s\n', mat2str(J));
+        fprintf('Jacobian determinant: %s\n', num2str(det(J)));
     end
 
 end

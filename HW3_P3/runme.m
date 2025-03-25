@@ -2,6 +2,7 @@
 %  Homework 3, Problem 3
 %  Instructor: L. Fichera, <loris@wpi.edu>
 close all; clear, clc
+addpath('utils');
 
 %% Initialize the model of the robot
 % Screw Axes:
@@ -25,7 +26,23 @@ nPts = length(V);
 % Initialize a matrix to store the IK solutions
 q = zeros(nPts, 6);
 
+failCount = 0;
+startTime = tic;
+
 for ii = 1:nPts
     q0 = zeros(1, 6);
     q(ii, :) = ikin(S, M, q0, V(:, ii));
+
+    if q(ii, :) == zeros(1, 6)
+        fprintf('IK failed for target pose %d\n', ii);
+        failCount = failCount + 1;
+    else
+        fprintf('IK succeeded for target pose %d\n', ii);
+    end
+
 end
+
+fprintf('Total number of failed IK solutions: %d\n', failCount);
+fprintf('Total number of successful IK solutions: %d\n', nPts - failCount);
+fprintf('Percentage of successful IK solutions: %.2f%%\n', (nPts - failCount) / nPts * 100);
+fprintf('Elapsed time: %.2f seconds\n', toc(startTime));

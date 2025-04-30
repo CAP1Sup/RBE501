@@ -1,5 +1,5 @@
 function robot = make_robot()
-    %MAKE_ROBOT Creates the kinematic structure of the robot used in homework 4, problem 1.
+    % MAKE_ROBOT Creates the kinematic structure of the robot used in homework 4, problem 1.
     %
     %   This is a factory function that creates the robot used in the homework.
     %
@@ -12,9 +12,9 @@ function robot = make_robot()
     %   Last modified: 04/07/2025
 
     %% Create the manipulator
-    L1 = 0.3; % Lenght of Link 1 [m]
-    L2 = 0.3; % Lenght of Link 2 [m]
-    L3 = 0.15; % Lenght of Link 3 [m]
+    L1 = 0.3; % Length of Link 1 [m]
+    L2 = 0.3; % Length of Link 2 [m]
+    L3 = 0.15; % Length of Link 3 [m]
 
     robot = SerialLink([Revolute('a', 0, 'd', L1, 'alpha', pi / 2, 'offset', pi / 2), ...
                             Revolute('a', L2, 'd', 0, 'alpha', 0), ...

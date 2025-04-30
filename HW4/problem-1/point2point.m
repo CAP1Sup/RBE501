@@ -7,10 +7,12 @@
 clear, clc, close all
 addpath('../lib');
 
-plotOn = false;
+maxIKIterations = 10000;
+alpha = 0.25; % Damping factor
 
 % Create the environment
 g = [0 0 -9.81]; % Gravity Vector [m/s^2]
+payload = 1; % Payload mass [kg]
 
 % Create the robot and display it in the home configuration
 robot = make_robot();
@@ -37,11 +39,107 @@ robot.plot(zeros(1, 3)); hold on;
 scatter3(path(1, :), path(2, :), path(3, :), 'filled');
 title('Inverse Dynamics Control');
 
-% Calculate the inverse kinematics
+% Setup waypoints for computation
 waypoints = zeros(n, nPts);
-% waypoints = ...
+failCount = 0;
+fprintf('Calculating waypoints: ')
+percent = fprintf('0%%');
+
+% Calculate the inverse kinematics
+for ii = 1:nPts
+    fprintf(repmat('\b', 1, percent));
+    percent = fprintf('%0.f%%', ceil(ii / nPts * 100));
+
+    % If possible, seed the joint angles with the previous ones
+    % This will result in much smoother motions and help prevent joint flips
+    if ii ~= 1
+        waypoints(:, ii) = waypoints(:, ii - 1);
+    end
+
+    % Seed the current pose with the robot's starting pose
+    T = fkine(S, M, waypoints(:, ii)');
+    currentPose = ht2pose(T);
+
+    % Calculate the target pose
+    T = [eye(3), path(:, ii); 0 0 0 1];
+    targetPose = ht2pose(T);
+
+    iterations = 0;
+
+    while norm(targetPose - currentPose) > 1e-3 && iterations < maxIKIterations
+        J = jacobe(S, M, waypoints(:, ii), 'space');
+
+        % Gradient descent step
+        deltaQ = alpha * transpose(J) * (targetPose - currentPose);
+
+        waypoints(:, ii) = waypoints(:, ii) + deltaQ;
+
+        % Update the current pose
+        T = fkine(S, M, waypoints(:, ii));
+        currentPose = ht2pose(T);
+
+        % Re-generate the goal pose
+        T = [T(1:3, 1:3) path(:, ii); 0 0 0 1];
+        targetPose = ht2pose(T);
+
+        iterations = iterations + 1; % Increment iteration counter
+
+    end
+
+    % Check if the maximum number of iterations was reached
+    if iterations >= maxIKIterations
+        fprintf("\n");
+        fprintf('Maximum number of iterations reached for configuration %d.\n', ii);
+        fprintf('Target joint variables: %s\n', mat2str(waypoints(:, ii)));
+        fprintf('Target pose: %s\n', mat2str(targetPose));
+        fprintf('Jacobian: %s\n', mat2str(J));
+        failCount = failCount + 1;
+    end
+
+end
+
+fprintf('\nDone.\n');
+
+fprintf('Optimizing waypoints...\n');
+% Optimize the waypoints to ensure that the arm is in the elbow-up configuration
+for ii = 1:nPts
+    % Check if the base joint can be flipped
+    if waypoints(1, ii) > pi / 8
+        waypoints(1, ii) = waypoints(1, ii) - pi;
+        waypoints(2, ii) =- (pi / 2 + waypoints(2, ii)) - pi / 2;
+        waypoints(3, ii) =- (pi / 2 + waypoints(3, ii)) - pi / 2;
+    end
+
+end
+
+% Ensure all of the angles are within [-pi, pi]
+for ii = 1:nPts
+
+    for jj = 1:n
+
+        if waypoints(jj, ii) > pi
+            waypoints(jj, ii) = waypoints(jj, ii) - 2 * pi;
+        elseif waypoints(jj, ii) < -pi
+            waypoints(jj, ii) = waypoints(jj, ii) + 2 * pi;
+        end
+
+    end
+
+end
 
 fprintf('Done.\n');
+
+% Show the waypoints
+robot.plot(zeros(1, 3)); hold on;
+scatter3(path(1, :), path(2, :), path(3, :), 'filled');
+title('Inverse Dynamics Control');
+% Plot the waypoints
+for ii = 1:nPts
+    robot.plot(waypoints(:, ii)', 'trail', {'r', 'LineWidth', 2});
+
+    % Sleep for 1 second
+    pause(2);
+end
 
 % Now, for each pair of consecutive waypoints, we will first calculate a
 % trajectory between these two points, and then calculate the torque
@@ -49,7 +147,7 @@ fprintf('Done.\n');
 fprintf('Generating the Trajectory and Torque Profiles... ');
 nbytes = fprintf('0%%');
 
-% Inititalize the variables where we will store the torque profiles, joint
+% Initialize the variables where we will store the torque profiles, joint
 % positions, and time, so that we can display them later
 tau_acc = [];
 jointPos_acc = [];
@@ -77,7 +175,7 @@ for jj = 1:nPts - 1
     for ii = 1:n
         % Calculate a trajectory using a quintic polynomial
         params_traj.t = [0 t(end)]; % start and end time of each movement step
-        params_traj.time_step = dt;
+        params_traj.dt = dt;
         params_traj.q = [waypoints(ii, jj) waypoints(ii, jj + 1)];
         params_traj.v = [0 0];
         params_traj.a = [0 0];
@@ -110,7 +208,11 @@ for jj = 1:nPts - 1
         params_rne.jointPos = jointPos_prescribed(:, ii);
         params_rne.jointVel = jointVel_prescribed(:, ii);
         params_rne.jointAcc = jointAcc_prescribed(:, ii);
-        params_rne.Ftip = zeros(6, 1); % end effector wrench
+
+        % Calculate the translation between the EE and the space frame
+        T = fkine(S, M, jointPos_prescribed(:, ii)');
+        Ftip_inS = [cross(T(1:3, 4), -g * payload), g * payload]';
+        params_rne.Ftip = adjoint(T)' * Ftip_inS;
 
         tau_prescribed(:, ii) = rne(params_rne);
 
@@ -119,7 +221,11 @@ for jj = 1:nPts - 1
         params_fdyn.jointPos = jointPos_actual(:, ii);
         params_fdyn.jointVel = jointVel_actual(:, ii);
         params_fdyn.tau = tau_prescribed(:, ii);
-        params_fdyn.Ftip = zeros(6, 1); % end effector wrench
+
+        % Calculate the translation between the EE and the space frame
+        T = fkine(S, M, jointPos_prescribed(:, ii)');
+        Ftip_inS = [cross(T(1:3, 4), -g * payload), g * payload]';
+        params_fdyn.Ftip = adjoint(T)' * Ftip_inS;
 
         jointAcc = fdyn(params_fdyn);
 
@@ -136,7 +242,7 @@ for jj = 1:nPts - 1
     t_acc = [t_acc t + t(end) * (jj - 1)];
 end
 
-fprintf('\nDone. Simulating the robot...');
+fprintf('\nDone. Simulating the robot...\n');
 
 %% Animate the robot
 title('Inverse Dynamics Control');

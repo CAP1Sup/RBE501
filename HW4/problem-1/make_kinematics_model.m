@@ -7,9 +7,9 @@ function [S, M] = make_kinematics_model()
     % Output: S - 6xn matrix whose columns are the screw axes of the robot
     %         M - homogeneous transformation representing the home configuration
 
-    L1 = 0.3; % Lenght of Link 1 [m]
-    L2 = 0.3; % Lenght of Link 2 [m]
-    L3 = 0.15; % Lenght of Link 3 [m]
+    L1 = 0.3; % Length of Link 1 [m]
+    L2 = 0.3; % Length of Link 2 [m]
+    L3 = 0.15; % Length of Link 3 [m]
 
     % Screw Axes
     S = [0 0 1 0 0 0;

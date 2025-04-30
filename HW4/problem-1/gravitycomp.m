@@ -7,8 +7,6 @@
 clear, clc, close all
 addpath('../lib');
 
-plotOn = false;
-
 % Create the environment
 g = [0 0 -9.81]; % Gravity Vector [m/s^2]
 
